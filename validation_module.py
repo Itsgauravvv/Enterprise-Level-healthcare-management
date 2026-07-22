@@ -133,8 +133,10 @@ def validate_availability_status(status):
 def validate_appointment_id(app_id):
     if app_id.strip() == "":
         raise ValueError("Appointment ID cannot be empty.")
+    
 
     return True
+
 
 
 def validate_date(date):
