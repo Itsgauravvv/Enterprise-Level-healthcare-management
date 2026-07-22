@@ -1,584 +1,404 @@
-"""
----------------------------------------------------------
-File Name : billing_module.py
-Description : Billing Management Module
----------------------------------------------------------
-"""
-
-from database_connection import get_connection
-from logger_module import log_info, log_error
-from validation_module import *
-
-import mysql.connector
+from data_store import patients, appointments, bills
+from validation_module import (
+    validate_bill_id,
+    validate_amount,
+    validate_discount,
+    validate_payment_status
+)
+from logger_module import logger
 
 
-
-def display_bill(bill):
-
-    print("-" * 90)
-    print(f"Bill ID             : {bill[0]}")
-    print(f"Appointment ID      : {bill[1]}")
-    print(f"Patient ID          : {bill[2]}")
-    print(f"Consultation Fee    : ₹{bill[3]:.2f}")
-    print(f"Medicine Charge     : ₹{bill[4]:.2f}")
-    print(f"Laboratory Charge   : ₹{bill[5]:.2f}")
-    print(f"Other Charge        : ₹{bill[6]:.2f}")
-    print(f"Gross Amount        : ₹{bill[7]:.2f}")
-    print(f"Discount            : ₹{bill[8]:.2f}")
-    print(f"Total Amount        : ₹{bill[9]:.2f}")
-    print(f"Payment Status      : {bill[10]}")
-    print("-" * 90)
-
+# ----------------------------------------
+# Generate Patient Bill
+# ----------------------------------------
 
 def generate_bill():
 
-    connection = get_connection()
-
-    if connection is None:
-
-        print("\nDatabase Connection Failed.")
-        return
-
-    cursor = connection.cursor()
-
     try:
 
-        print("\n========== GENERATE BILL ==========")
-
         bill_id = input("Enter Bill ID : ").strip()
-
         validate_bill_id(bill_id)
 
+        # Duplicate Bill ID
+        for bill in bills:
+            if bill["bill_id"] == bill_id:
+                logger.warning(f"Duplicate Bill ID {bill_id}")
+                raise ValueError("Bill ID already exists.")
 
-        cursor.execute(
-            "SELECT bill_id FROM bills WHERE bill_id=%s",
-            (bill_id,)
-        )
+        patient_id = input("Enter Patient ID : ").strip()
 
-        if cursor.fetchone():
+        patient_found = False
 
-            print("\nBill ID already exists.")
+        for patient in patients:
+            if patient["patient_id"] == patient_id:
+                patient_found = True
+                break
 
-            log_error(f"Duplicate Bill ID : {bill_id}")
-
-            return
-
+        if not patient_found:
+            raise ValueError("Patient ID does not exist.")
 
         appointment_id = input("Enter Appointment ID : ").strip()
 
-        validate_appointment_id(appointment_id)
+        appointment = None
 
-        cursor.execute("""
-            SELECT
-                appointment_id,
-                patient_id,
-                doctor_id,
-                status
-            FROM appointments
-            WHERE appointment_id=%s
-        """, (appointment_id,))
-
-        appointment = cursor.fetchone()
+        for app in appointments:
+            if app["appointment_id"] == appointment_id:
+                appointment = app
+                break
 
         if appointment is None:
+            raise ValueError("Appointment ID does not exist.")
 
-            print("\nAppointment Not Found.")
-            return
+        if appointment["patient_id"] != patient_id:
+            raise ValueError(
+                "Appointment does not belong to this patient."
+            )
 
-        if appointment[3] != "Completed":
+        if appointment["status"] != "Completed":
+            raise ValueError(
+                "Bill can be generated only for completed appointments."
+            )
 
-            print("\nBill can be generated only for Completed Appointments.")
-            return
+        # Only one bill per appointment
+        for bill in bills:
+            if bill["appointment_id"] == appointment_id:
+                raise ValueError(
+                    "Bill already generated for this appointment."
+                )
 
-        patient_id = appointment[1]
-        doctor_id = appointment[2]
-
-
-        cursor.execute("""
-            SELECT bill_id
-            FROM bills
-            WHERE appointment_id=%s
-        """, (appointment_id,))
-
-        if cursor.fetchone():
-
-            print("\nBill already exists for this Appointment.")
-            return
-
-
-        cursor.execute("""
-            SELECT consultation_fee
-            FROM doctors
-            WHERE doctor_id=%s
-        """, (doctor_id,))
-
-        doctor = cursor.fetchone()
-
-        if doctor is None:
-
-            print("\nDoctor Record Not Found.")
-            return
-
-        consultation_fee = float(doctor[0])
-
-        print(f"\nConsultation Fee : ₹{consultation_fee:.2f}")
-
- 
-
-        medicine_charge = float(
-            input("Medicine Charge : ")
+        consultation_fee = float(
+            input("Consultation Fee : ").strip()
         )
+        validate_amount(consultation_fee)
 
-        validate_amount(medicine_charge)
-
-        laboratory_charge = float(
-            input("Laboratory Charge : ")
+        medicine_charges = float(
+            input("Medicine Charges : ").strip()
         )
+        validate_amount(medicine_charges)
 
-        validate_amount(laboratory_charge)
-
-        other_charge = float(
-            input("Other Charge : ")
+        laboratory_charges = float(
+            input("Laboratory Charges : ").strip()
         )
+        validate_amount(laboratory_charges)
 
-        validate_amount(other_charge)
-
-        
+        room_charges = float(
+            input("Room Charges : ").strip()
+        )
+        validate_amount(room_charges)
 
         gross_amount = (
-            consultation_fee +
-            medicine_charge +
-            laboratory_charge +
-            other_charge
+            consultation_fee
+            + medicine_charges
+            + laboratory_charges
+            + room_charges
         )
-
-        print(f"\nGross Amount : ₹{gross_amount:.2f}")
-
 
         discount = float(
-            input("Enter Discount : ")
+            input("Discount : ").strip()
         )
 
-        validate_discount(discount)
-
-        if discount > gross_amount:
-
-            print("\nDiscount cannot be greater than Gross Amount.")
-            return
+        validate_discount(discount, gross_amount)
 
         total_amount = gross_amount - discount
 
-        print(f"Total Amount : ₹{total_amount:.2f}")
-
-       
+        if total_amount < 0:
+            raise ValueError(
+                "Total amount cannot be negative."
+            )
 
         payment_status = input(
-            "Payment Status (Paid/Pending) : "
-        ).strip()
+            "Payment Status (Paid/Pending): "
+        ).strip().title()
 
         validate_payment_status(payment_status)
 
+        bill = {
 
-        sql = """
-        INSERT INTO bills
-        (
-            bill_id,
-            appointment_id,
-            patient_id,
-            consultation_fee,
-            medicine_charge,
-            laboratory_charge,
-            other_charge,
-            gross_amount,
-            discount,
-            total_amount,
-            payment_status
-        )
-        VALUES
-        (
-            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-        )
-        """
+            "bill_id": bill_id,
+            "patient_id": patient_id,
+            "appointment_id": appointment_id,
+            "consultation_fee": consultation_fee,
+            "medicine_charges": medicine_charges,
+            "laboratory_charges": laboratory_charges,
+            "room_charges": room_charges,
+            "gross_amount": gross_amount,
+            "discount": discount,
+            "total_amount": total_amount,
+            "payment_status": payment_status
 
-        values = (
-            bill_id,
-            appointment_id,
-            patient_id,
-            consultation_fee,
-            medicine_charge,
-            laboratory_charge,
-            other_charge,
-            gross_amount,
-            discount,
-            total_amount,
-            payment_status
-        )
+        }
 
-        cursor.execute(sql, values)
-
-        connection.commit()
-
-        print("\nBill Generated Successfully.")
-
-        print("\n========== BILL DETAILS ==========")
-
-        cursor.execute("""
-            SELECT *
-            FROM bills
-            WHERE bill_id=%s
-        """, (bill_id,))
-
-        bill = cursor.fetchone()
-
-        display_bill(bill)
-
-        log_info(f"Bill Generated : {bill_id}")
+        bills.append(bill)
 
     except ValueError as e:
 
-        print("\nValidation Error :", e)
-        log_error(str(e))
-
-    except mysql.connector.Error as e:
-
-        print("\nDatabase Error :", e)
-        log_error(str(e))
+        print("\nError :", e)
+        logger.error(str(e))
 
     except Exception as e:
 
         print("\nUnexpected Error :", e)
-        log_error(str(e))
+        logger.exception(
+            "Unexpected error while generating bill."
+        )
+
+    else:
+
+        print("\nBill Generated Successfully.")
+
+        print("\n----------- BILL -----------")
+        print(f"Bill ID           : {bill_id}")
+        print(f"Patient ID        : {patient_id}")
+        print(f"Appointment ID    : {appointment_id}")
+        print(f"Gross Amount      : {gross_amount}")
+        print(f"Discount          : {discount}")
+        print(f"Total Amount      : {total_amount}")
+        print(f"Payment Status    : {payment_status}")
+        print("-----------------------------")
+
+        logger.info(
+            f"Bill {bill_id} generated successfully."
+        )
 
     finally:
 
-        cursor.close()
-        connection.close()
+        print()
 
+# ----------------------------------------
+# Display Bill Details
+# ----------------------------------------
+
+def display_bill(bill):
+
+    patient_name = "Unknown"
+
+    for patient in patients:
+        if patient["patient_id"] == bill["patient_id"]:
+            patient_name = patient["name"]
+            break
+
+    print("-" * 60)
+    print(f"Bill ID          : {bill['bill_id']}")
+    print(f"Patient ID       : {bill['patient_id']}")
+    print(f"Patient Name     : {patient_name}")
+    print(f"Appointment ID   : {bill['appointment_id']}")
+    print(f"Gross Amount     : {bill['gross_amount']}")
+    print(f"Discount         : {bill['discount']}")
+    print(f"Total Amount     : {bill['total_amount']}")
+    print(f"Payment Status   : {bill['payment_status']}")
+    print("-" * 60)
+
+
+# ----------------------------------------
+# View All Bills
+# ----------------------------------------
 
 def view_all_bills():
 
-    connection = get_connection()
-
-    if connection is None:
-
-        print("\nDatabase Connection Failed.")
-        return
-
-    cursor = connection.cursor()
-
     try:
 
-        cursor.execute("""
-            SELECT
-                b.bill_id,
-                b.appointment_id,
-                b.patient_id,
-                p.patient_name,
-                b.consultation_fee,
-                b.medicine_charge,
-                b.laboratory_charge,
-                b.other_charge,
-                b.gross_amount,
-                b.discount,
-                b.total_amount,
-                b.payment_status
-            FROM bills b
-            INNER JOIN patients p
-                ON b.patient_id = p.patient_id
-            ORDER BY b.bill_id
-        """)
-
-        bills = cursor.fetchall()
-
         if len(bills) == 0:
+            raise ValueError("No bills found.")
 
-            print("\nNo Bills Found.")
-            return
-
-        print("\n================ ALL BILLS ================\n")
+        print("\n========== BILL LIST ==========\n")
 
         total_revenue = 0
-
-        for bill in bills:
-
-            print("-" * 90)
-            print(f"Bill ID             : {bill[0]}")
-            print(f"Appointment ID      : {bill[1]}")
-            print(f"Patient ID          : {bill[2]}")
-            print(f"Patient Name        : {bill[3]}")
-            print(f"Consultation Fee    : ₹{bill[4]:.2f}")
-            print(f"Medicine Charge     : ₹{bill[5]:.2f}")
-            print(f"Laboratory Charge   : ₹{bill[6]:.2f}")
-            print(f"Other Charge        : ₹{bill[7]:.2f}")
-            print(f"Gross Amount        : ₹{bill[8]:.2f}")
-            print(f"Discount            : ₹{bill[9]:.2f}")
-            print(f"Total Amount        : ₹{bill[10]:.2f}")
-            print(f"Payment Status      : {bill[11]}")
-            print("-" * 90)
-
-            total_revenue += float(bill[10])
-
-        print(f"\nTotal Bills        : {len(bills)}")
-        print(f"Total Revenue      : ₹{total_revenue:.2f}")
-
-        log_info("Viewed All Bills")
-
-    except mysql.connector.Error as e:
-
-        print("\nDatabase Error :", e)
-        log_error(str(e))
-
-    except Exception as e:
-
-        print("\nUnexpected Error :", e)
-        log_error(str(e))
-
-    finally:
-
-        cursor.close()
-        connection.close()
-
-
-def search_bill():
-
-    connection = get_connection()
-
-    if connection is None:
-
-        print("\nDatabase Connection Failed.")
-        return
-
-    cursor = connection.cursor()
-
-    try:
-
-        print("\n========== SEARCH BILL ==========")
-
-        print("1. Bill ID")
-        print("2. Appointment ID")
-        print("3. Patient ID")
-        print("4. Payment Status")
-
-        choice = input("\nEnter Choice : ").strip()
-
-       
-
-        if choice == "1":
-
-            bill_id = input("Enter Bill ID : ").strip()
-
-            validate_bill_id(bill_id)
-
-            cursor.execute("""
-                SELECT *
-                FROM bills
-                WHERE bill_id=%s
-            """, (bill_id,))
-
-
-        elif choice == "2":
-
-            appointment_id = input(
-                "Enter Appointment ID : "
-            ).strip()
-
-            validate_appointment_id(appointment_id)
-
-            cursor.execute("""
-                SELECT *
-                FROM bills
-                WHERE appointment_id=%s
-            """, (appointment_id,))
-
-
-        elif choice == "3":
-
-            patient_id = input(
-                "Enter Patient ID : "
-            ).strip()
-
-            validate_patient_id(patient_id)
-
-            cursor.execute("""
-                SELECT *
-                FROM bills
-                WHERE patient_id=%s
-            """, (patient_id,))
-
-
-        elif choice == "4":
-
-            payment_status = input(
-                "Enter Payment Status (Paid/Pending) : "
-            ).strip()
-
-            validate_payment_status(payment_status)
-
-            cursor.execute("""
-                SELECT *
-                FROM bills
-                WHERE payment_status=%s
-            """, (payment_status,))
-
-        else:
-
-            print("\nInvalid Choice.")
-            return
-
-        bills = cursor.fetchall()
-
-        if len(bills) == 0:
-
-            print("\nNo Matching Bill Found.")
-            return
-
-        print("\n========== SEARCH RESULT ==========\n")
-
-        total_amount = 0
+        total_paid = 0
+        total_pending = 0
 
         for bill in bills:
 
             display_bill(bill)
 
-            total_amount += float(bill[9])
+            total_revenue += bill["total_amount"]
 
-        print(f"\nTotal Records : {len(bills)}")
-        print(f"Total Amount  : ₹{total_amount:.2f}")
+            if bill["payment_status"] == "Paid":
+                total_paid += bill["total_amount"]
+            else:
+                total_pending += bill["total_amount"]
 
-        log_info("Bill Search Performed")
+        print("\n========== BILL SUMMARY ==========")
+        print(f"Total Bills        : {len(bills)}")
+        print(f"Total Revenue      : {total_revenue}")
+        print(f"Total Paid Amount  : {total_paid}")
+        print(f"Total Pending      : {total_pending}")
+
+        if len(bills) > 0:
+            print(
+                f"Average Bill Amount : "
+                f"{total_revenue / len(bills):.2f}"
+            )
 
     except ValueError as e:
 
-        print("\nValidation Error :", e)
+        print("\nError :", e)
+        logger.warning(str(e))
 
-        log_error(str(e))
+    except ZeroDivisionError:
 
-    except mysql.connector.Error as e:
-
-        print("\nDatabase Error :", e)
-
-        log_error(str(e))
+        print("\nAverage cannot be calculated.")
+        logger.exception("Division by zero.")
 
     except Exception as e:
 
         print("\nUnexpected Error :", e)
-
-        log_error(str(e))
+        logger.exception(
+            "Unexpected error while viewing bills."
+        )
 
     finally:
 
-        cursor.close()
+        print()
 
-        connection.close()
+# ----------------------------------------
+# Search Patient Bills
+# ----------------------------------------
 
-
-def update_payment_status():
-
-    connection = get_connection()
-
-    if connection is None:
-
-        print("\nDatabase Connection Failed.")
-        return
-
-    cursor = connection.cursor()
+def search_patient_bills():
 
     try:
 
-        print("\n========== UPDATE PAYMENT STATUS ==========")
+        if not bills:
+            raise ValueError("No bills found.")
 
-        bill_id = input("Enter Bill ID : ").strip()
+        patient_id = input("Enter Patient ID : ").strip()
 
-        validate_bill_id(bill_id)
+        patient_found = False
 
-     
+        for patient in patients:
+            if patient["patient_id"] == patient_id:
+                patient_found = True
+                patient_name = patient["name"]
+                break
 
-        cursor.execute("""
-            SELECT *
-            FROM bills
-            WHERE bill_id=%s
-        """, (bill_id,))
+        if not patient_found:
+            raise ValueError("Patient ID does not exist.")
 
-        bill = cursor.fetchone()
+        patient_bills = []
 
-        if bill is None:
+        total_billed = 0
+        total_paid = 0
+        total_pending = 0
 
-            print("\nBill Not Found.")
-            return
+        for bill in bills:
 
-        print("\n========== BILL DETAILS ==========\n")
+            if bill["patient_id"] == patient_id:
 
-        display_bill(bill)
+                patient_bills.append(bill)
 
+                total_billed += bill["total_amount"]
 
-        if bill[10] == "Paid":
+                if bill["payment_status"] == "Paid":
+                    total_paid += bill["total_amount"]
+                else:
+                    total_pending += bill["total_amount"]
 
-            print("\nPayment has already been completed.")
-
-            log_error(
-                f"Payment Already Completed : {bill_id}"
+        if not patient_bills:
+            raise ValueError(
+                "No bills found for this patient."
             )
 
-            return
+        print("\n========== PATIENT BILL DETAILS ==========\n")
+        print(f"Patient ID   : {patient_id}")
+        print(f"Patient Name : {patient_name}\n")
 
+        for bill in patient_bills:
+            display_bill(bill)
 
-        confirm = input(
-            "\nMark this bill as Paid? (Y/N) : "
-        ).strip().upper()
+        print("\n========== BILL SUMMARY ==========")
+        print(f"Total Bills        : {len(patient_bills)}")
+        print(f"Total Billed       : {total_billed}")
+        print(f"Total Paid         : {total_paid}")
+        print(f"Total Pending      : {total_pending}")
 
-        if confirm != "Y":
-
-            print("\nPayment Status Update Cancelled.")
-            return
-
-       
-        cursor.execute("""
-            UPDATE bills
-            SET payment_status='Paid'
-            WHERE bill_id=%s
-        """, (bill_id,))
-
-        connection.commit()
-
-        print("\nPayment Status Updated Successfully.")
-
-
-        cursor.execute("""
-            SELECT *
-            FROM bills
-            WHERE bill_id=%s
-        """, (bill_id,))
-
-        updated_bill = cursor.fetchone()
-
-        print("\n========== UPDATED BILL ==========\n")
-
-        display_bill(updated_bill)
-
-        log_info(
-            f"Payment Status Updated : {bill_id} -> Paid"
+        logger.info(
+            f"Displayed bills for Patient {patient_id}"
         )
 
     except ValueError as e:
 
-        print("\nValidation Error :", e)
-
-        log_error(str(e))
-
-    except mysql.connector.Error as e:
-
-        print("\nDatabase Error :", e)
-
-        log_error(str(e))
+        print("\nError :", e)
+        logger.error(str(e))
 
     except Exception as e:
 
         print("\nUnexpected Error :", e)
-
-        log_error(str(e))
+        logger.exception(
+            "Unexpected error while searching patient bills."
+        )
 
     finally:
 
-        cursor.close()
+        print()
 
-        connection.close()
+
+# ----------------------------------------
+# Update Payment Status
+# ----------------------------------------
+
+def update_payment_status():
+
+    try:
+
+        if not bills:
+            raise ValueError("No bills found.")
+
+        bill_id = input(
+            "Enter Bill ID : "
+        ).strip()
+
+        bill = None
+
+        for record in bills:
+            if record["bill_id"] == bill_id:
+                bill = record
+                break
+
+        if bill is None:
+            raise ValueError("Bill ID does not exist.")
+
+        if bill["payment_status"] == "Paid":
+            raise ValueError(
+                "Payment is already completed."
+            )
+
+        print("\nCurrent Payment Status :",
+              bill["payment_status"])
+
+        confirm = input(
+            "Mark this bill as Paid? (Y/N): "
+        ).strip().upper()
+
+        if confirm != "Y":
+
+            print("\nPayment update cancelled.")
+            logger.info(
+                f"Payment update cancelled for Bill {bill_id}"
+            )
+            return
+
+        bill["payment_status"] = "Paid"
+
+        logger.info(
+            f"Payment updated for Bill {bill_id}"
+        )
+
+    except ValueError as e:
+
+        print("\nError :", e)
+        logger.error(str(e))
+
+    except Exception as e:
+
+        print("\nUnexpected Error :", e)
+        logger.exception(
+            "Unexpected error while updating payment."
+        )
+
+    else:
+
+        print("\nPayment Status Updated Successfully.")
+
+    finally:
+
+        print()
