@@ -1,352 +1,665 @@
-from data_store import patients, doctors, appointments
-from validation_module import (
-    validate_appointment_id,
-    validate_date,
-    validate_time
-)
-from logger_module import logger
+
+from database_connection import get_connection
+from logger_module import log_info, log_error, log_warning, log_exception
+from validation_module import *
+
+import mysql.connector
 
 
-# ----------------------------------------
-# Display Appointment Details
-# ----------------------------------------
 
 def display_appointment(appointment):
 
-    patient_name = "Unknown"
-    doctor_name = "Unknown"
-    department = "Unknown"
+    print("-" * 90)
+    print(f"Appointment ID     : {appointment[0]}")
+    print(f"Patient ID         : {appointment[1]}")
+    print(f"Doctor ID          : {appointment[2]}")
+    print(f"Appointment Date   : {appointment[3]}")
+    print(f"Appointment Time   : {appointment[4]}")
+    print(f"Status             : {appointment[5]}")
+    print("-" * 90)
 
-    for patient in patients:
-        if patient["patient_id"] == appointment["patient_id"]:
-            patient_name = patient["name"]
-            break
-
-    for doctor in doctors:
-        if doctor["doctor_id"] == appointment["doctor_id"]:
-            doctor_name = doctor["doctor_name"]
-            department = doctor["department"]
-            break
-
-    print("-" * 60)
-    print(f"Appointment ID   : {appointment['appointment_id']}")
-    print(f"Patient ID       : {appointment['patient_id']}")
-    print(f"Patient Name     : {patient_name}")
-    print(f"Doctor ID        : {appointment['doctor_id']}")
-    print(f"Doctor Name      : {doctor_name}")
-    print(f"Department       : {department}")
-    print(f"Appointment Date : {appointment['appointment_date']}")
-    print(f"Appointment Time : {appointment['appointment_time']}")
-    print(f"Status           : {appointment['status']}")
-    print("-" * 60)
-
-
-# ----------------------------------------
-# Book Appointment
-# ----------------------------------------
 
 def book_appointment():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
+        print("\n========== BOOK APPOINTMENT ==========")
+
         appointment_id = input("Enter Appointment ID : ").strip()
+
         validate_appointment_id(appointment_id)
 
-        # Duplicate Appointment ID
-        for appointment in appointments:
-            if appointment["appointment_id"] == appointment_id:
-                logger.warning(
-                    f"Duplicate Appointment ID {appointment_id}"
-                )
-                raise ValueError(
-                    "Appointment ID already exists."
-                )
+        # Check Duplicate Appointment ID
+        cursor.execute(
+            "SELECT appointment_id FROM appointments WHERE appointment_id=%s",
+            (appointment_id,)
+        )
+
+        if cursor.fetchone():
+
+            print("\nAppointment ID already exists.")
+
+            log_error(f"Duplicate Appointment ID : {appointment_id}")
+
+            return
+
 
         patient_id = input("Enter Patient ID : ").strip()
 
-        patient_exists = False
+        validate_patient_id(patient_id)
 
-        for patient in patients:
-            if patient["patient_id"] == patient_id:
-                patient_exists = True
-                break
+        cursor.execute(
+            "SELECT patient_name FROM patients WHERE patient_id=%s",
+            (patient_id,)
+        )
 
-        if not patient_exists:
-            raise ValueError("Patient ID does not exist.")
+        patient = cursor.fetchone()
+
+        if patient is None:
+
+            print("\nPatient Not Found.")
+
+            return
 
         doctor_id = input("Enter Doctor ID : ").strip()
 
-        doctor_found = False
-        doctor_available = False
+        validate_doctor_id(doctor_id)
 
-        for doctor in doctors:
+        cursor.execute(
+            """
+            SELECT doctor_name,
+                   availability_status
+            FROM doctors
+            WHERE doctor_id=%s
+            """,
+            (doctor_id,)
+        )
 
-            if doctor["doctor_id"] == doctor_id:
+        doctor = cursor.fetchone()
 
-                doctor_found = True
+        if doctor is None:
 
-                if doctor["availability_status"] != "Available":
-                    logger.warning(
-                        f"Doctor {doctor_id} is unavailable."
-                    )
-                    raise ValueError(
-                        "Doctor is currently unavailable."
-                    )
+            print("\nDoctor Not Found.")
 
-                doctor_available = True
-                break
+            return
 
-        if not doctor_found:
-            raise ValueError("Doctor ID does not exist.")
+        if doctor[1] != "Available":
 
-        if not doctor_available:
-            raise ValueError("Doctor is unavailable.")
+            print("\nDoctor is currently not available.")
+
+            return
+
 
         appointment_date = input(
-            "Enter Appointment Date (DD-MM-YYYY): "
+            "Enter Appointment Date (YYYY-MM-DD) : "
         ).strip()
 
         validate_date(appointment_date)
 
         appointment_time = input(
-            "Enter Appointment Time (HH:MM AM/PM): "
+            "Enter Appointment Time (HH:MM:SS) : "
         ).strip()
 
         validate_time(appointment_time)
 
-        # Check Slot Availability
-        for appointment in appointments:
+        cursor.execute(
+            """
+            SELECT appointment_id
+            FROM appointments
+            WHERE doctor_id=%s
+            AND appointment_date=%s
+            AND appointment_time=%s
+            AND status='Scheduled'
+            """,
+            (
+                doctor_id,
+                appointment_date,
+                appointment_time
+            )
+        )
 
-            if (
-                appointment["doctor_id"] == doctor_id
-                and appointment["appointment_date"] == appointment_date
-                and appointment["appointment_time"] == appointment_time
-                and appointment["status"] == "Scheduled"
-            ):
+        if cursor.fetchone():
 
-                raise ValueError(
-                    "Appointment slot is already booked."
-                )
+            print("\nSelected Time Slot is already booked.")
 
-        appointment = {
+            return
 
-            "appointment_id": appointment_id,
-            "patient_id": patient_id,
-            "doctor_id": doctor_id,
-            "appointment_date": appointment_date,
-            "appointment_time": appointment_time,
-            "status": "Scheduled"
 
-        }
+        sql = """
+        INSERT INTO appointments
+        (
+            appointment_id,
+            patient_id,
+            doctor_id,
+            appointment_date,
+            appointment_time,
+            status
+        )
+        VALUES
+        (
+            %s,%s,%s,%s,%s,%s
+        )
+        """
 
-        appointments.append(appointment)
+        values = (
+
+            appointment_id,
+            patient_id,
+            doctor_id,
+            appointment_date,
+            appointment_time,
+            "Scheduled"
+
+        )
+
+        cursor.execute(sql, values)
+
+        connection.commit()
+
+        print("\nAppointment Booked Successfully.")
+
+        log_info(
+            f"Appointment Booked : {appointment_id}"
+        )
 
     except ValueError as e:
 
-        print("\nError :", e)
-        logger.error(str(e))
+        print("\nValidation Error :", e)
+
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+
+        log_error(str(e))
 
     except Exception as e:
 
         print("\nUnexpected Error :", e)
-        logger.exception(
-            "Unexpected error while booking appointment."
-        )
 
-    else:
-
-        print("\nAppointment Booked Successfully.")
-        logger.info(
-            f"Appointment {appointment_id} booked successfully."
-        )
+        log_error(str(e))
 
     finally:
 
-        print()
+        cursor.close()
 
-# ----------------------------------------
-# View All Appointments
-# ----------------------------------------
+        connection.close()
 
 def view_all_appointments():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
-        if len(appointments) == 0:
-            raise ValueError("No appointments found.")
+        cursor.execute("""
+            SELECT
+                a.appointment_id,
+                a.patient_id,
+                p.patient_name,
+                a.doctor_id,
+                d.doctor_name,
+                a.appointment_date,
+                a.appointment_time,
+                a.status
+            FROM appointments a
+            INNER JOIN patients p
+                ON a.patient_id = p.patient_id
+            INNER JOIN doctors d
+                ON a.doctor_id = d.doctor_id
+            ORDER BY a.appointment_date,
+                     a.appointment_time
+        """)
 
-        print("\n========== Appointment List ==========\n")
+        appointments = cursor.fetchall()
+
+        if len(appointments) == 0:
+
+            print("\nNo Appointment Records Found.")
+            return
+
+        print("\n================ ALL APPOINTMENTS ================\n")
 
         for appointment in appointments:
-            display_appointment(appointment)
+
+            print("-" * 90)
+            print(f"Appointment ID   : {appointment[0]}")
+            print(f"Patient ID       : {appointment[1]}")
+            print(f"Patient Name     : {appointment[2]}")
+            print(f"Doctor ID        : {appointment[3]}")
+            print(f"Doctor Name      : {appointment[4]}")
+            print(f"Date             : {appointment[5]}")
+            print(f"Time             : {appointment[6]}")
+            print(f"Status           : {appointment[7]}")
+            print("-" * 90)
 
         print(f"\nTotal Appointments : {len(appointments)}")
 
-        scheduled = 0
-        completed = 0
-        cancelled = 0
+        log_info("Viewed All Appointments")
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+
+        log_error(str(e))
+
+    except Exception as e:
+
+        print("\nUnexpected Error :", e)
+
+        log_error(str(e))
+
+    finally:
+
+        cursor.close()
+
+        connection.close()
+
+
+def search_appointment():
+
+    connection = get_connection()
+
+    if connection is None:
+
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
+    try:
+
+        print("\n========== SEARCH APPOINTMENT ==========")
+
+        print("""
+1. Search by Appointment ID
+2. Search by Patient ID
+3. Search by Doctor ID
+4. Search by Appointment Date
+5. Search by Status
+""")
+
+        choice = input("Enter your choice : ").strip()
+
+
+        if choice == "1":
+
+            appointment_id = input("Enter Appointment ID : ").strip()
+
+            validate_appointment_id(appointment_id)
+
+            cursor.execute("""
+                SELECT
+                    appointment_id,
+                    patient_id,
+                    doctor_id,
+                    appointment_date,
+                    appointment_time,
+                    status
+                FROM appointments
+                WHERE appointment_id=%s
+            """, (appointment_id,))
+
+
+        elif choice == "2":
+
+            patient_id = input("Enter Patient ID : ").strip()
+
+            validate_patient_id(patient_id)
+
+            cursor.execute("""
+                SELECT
+                    appointment_id,
+                    patient_id,
+                    doctor_id,
+                    appointment_date,
+                    appointment_time,
+                    status
+                FROM appointments
+                WHERE patient_id=%s
+                ORDER BY appointment_date,
+                         appointment_time
+            """, (patient_id,))
+
+
+        elif choice == "3":
+
+            doctor_id = input("Enter Doctor ID : ").strip()
+
+            validate_doctor_id(doctor_id)
+
+            cursor.execute("""
+                SELECT
+                    appointment_id,
+                    patient_id,
+                    doctor_id,
+                    appointment_date,
+                    appointment_time,
+                    status
+                FROM appointments
+                WHERE doctor_id=%s
+                ORDER BY appointment_date,
+                         appointment_time
+            """, (doctor_id,))
+
+
+        elif choice == "4":
+
+            appointment_date = input(
+                "Enter Appointment Date (YYYY-MM-DD) : "
+            ).strip()
+
+            validate_date(appointment_date)
+
+            cursor.execute("""
+                SELECT
+                    appointment_id,
+                    patient_id,
+                    doctor_id,
+                    appointment_date,
+                    appointment_time,
+                    status
+                FROM appointments
+                WHERE appointment_date=%s
+                ORDER BY appointment_time
+            """, (appointment_date,))
+
+
+        elif choice == "5":
+
+            print("\nAvailable Status")
+            print("1. Scheduled")
+            print("2. Completed")
+            print("3. Cancelled")
+
+            status_choice = input(
+                "Enter Status Choice : "
+            ).strip()
+
+            status_dict = {
+                "1": "Scheduled",
+                "2": "Completed",
+                "3": "Cancelled"
+            }
+
+            if status_choice not in status_dict:
+
+                print("\nInvalid Status Choice.")
+                return
+
+            status = status_dict[status_choice]
+
+            cursor.execute("""
+                SELECT
+                    appointment_id,
+                    patient_id,
+                    doctor_id,
+                    appointment_date,
+                    appointment_time,
+                    status
+                FROM appointments
+                WHERE status=%s
+                ORDER BY appointment_date,
+                         appointment_time
+            """, (status,))
+
+        else:
+
+            print("\nInvalid Choice.")
+            return
+
+        appointments = cursor.fetchall()
+
+        if len(appointments) == 0:
+
+            print("\nNo Appointment Found.")
+
+            log_warning("Appointment Search : No Records Found")
+
+            return
+
+        print("\n========== SEARCH RESULTS ==========\n")
 
         for appointment in appointments:
 
-            if appointment["status"] == "Scheduled":
-                scheduled += 1
+            display_appointment(appointment)
 
-            elif appointment["status"] == "Completed":
-                completed += 1
+        print(f"Total Records Found : {len(appointments)}")
 
-            elif appointment["status"] == "Cancelled":
-                cancelled += 1
-
-        print("\nAppointment Summary")
-        print("--------------------------")
-        print(f"Scheduled : {scheduled}")
-        print(f"Completed : {completed}")
-        print(f"Cancelled : {cancelled}")
+        log_info(
+            f"Appointment Search Successful ({len(appointments)} Record(s))"
+        )
 
     except ValueError as e:
 
-        print("\nError :", e)
-        logger.warning(str(e))
+        print("\nValidation Error :", e)
+
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+
+        log_error(str(e))
 
     except Exception as e:
 
         print("\nUnexpected Error :", e)
-        logger.exception(
-            "Unexpected error while viewing appointments."
-        )
+
+        log_exception(str(e)) 
 
     finally:
 
-        print()
+        cursor.close()
 
-# ----------------------------------------
-# Cancel Appointment
-# ----------------------------------------
+        connection.close()
+
+
+def update_appointment_status():
+
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
+    try:
+
+        print("\n========== UPDATE APPOINTMENT STATUS ==========")
+
+        appointment_id = input("Enter Appointment ID : ").strip()
+
+        validate_appointment_id(appointment_id)
+
+        cursor.execute("""
+            SELECT appointment_id, status
+            FROM appointments
+            WHERE appointment_id=%s
+        """, (appointment_id,))
+
+        appointment = cursor.fetchone()
+
+        if appointment is None:
+
+            print("\nAppointment Not Found.")
+            return
+
+        print(f"\nCurrent Status : {appointment[1]}")
+
+        print("\n1. Scheduled")
+        print("2. Completed")
+        print("3. Cancelled")
+
+        choice = input("\nEnter New Status : ").strip()
+
+        if choice == "1":
+            status = "Scheduled"
+
+        elif choice == "2":
+            status = "Completed"
+
+        elif choice == "3":
+            status = "Cancelled"
+
+        else:
+            print("\nInvalid Choice.")
+            return
+
+        cursor.execute("""
+            UPDATE appointments
+            SET status=%s
+            WHERE appointment_id=%s
+        """, (status, appointment_id))
+
+        connection.commit()
+
+        print("\nAppointment Status Updated Successfully.")
+
+        log_info(
+            f"Appointment Status Updated : {appointment_id} -> {status}"
+        )
+
+    except ValueError as e:
+
+        print("\nValidation Error :", e)
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+        log_error(str(e))
+
+    except Exception as e:
+
+        print("\nUnexpected Error :", e)
+        log_error(str(e))
+
+    finally:
+
+        cursor.close()
+        connection.close()
+
 
 def cancel_appointment():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
-        if not appointments:
-            raise ValueError("No appointments found.")
+        print("\n========== CANCEL APPOINTMENT ==========")
 
-        appointment_id = input(
-            "Enter Appointment ID to Cancel : "
-        ).strip()
+        appointment_id = input("Enter Appointment ID : ").strip()
 
-        appointment = None
+        validate_appointment_id(appointment_id)
 
-        for record in appointments:
-            if record["appointment_id"] == appointment_id:
-                appointment = record
-                break
+        cursor.execute("""
+            SELECT
+                appointment_id,
+                patient_id,
+                doctor_id,
+                appointment_date,
+                appointment_time,
+                status
+            FROM appointments
+            WHERE appointment_id=%s
+        """, (appointment_id,))
+
+        appointment = cursor.fetchone()
 
         if appointment is None:
-            raise ValueError("Appointment ID does not exist.")
 
-        if appointment["status"] == "Completed":
-            raise ValueError(
-                "Completed appointment cannot be cancelled."
+            print("\nAppointment Not Found.")
+            return
+
+        print("\nAppointment Details")
+        display_appointment(appointment)
+
+
+        if appointment[5] == "Cancelled":
+
+            print("\nAppointment is already cancelled.")
+
+            log_error(
+                f"Appointment Already Cancelled : {appointment_id}"
             )
 
-        if appointment["status"] == "Cancelled":
-            raise ValueError(
-                "Appointment is already cancelled."
+            return
+
+        if appointment[5] == "Completed":
+
+            print("\nCompleted Appointment cannot be cancelled.")
+
+            log_error(
+                f"Cannot Cancel Completed Appointment : {appointment_id}"
             )
+
+            return
 
         confirm = input(
-            "Are you sure you want to cancel? (Y/N): "
+            "\nAre you sure you want to cancel? (Y/N) : "
         ).strip().upper()
 
         if confirm != "Y":
-            print("\nCancellation aborted.")
-            logger.info(
-                f"Cancellation aborted for Appointment {appointment_id}"
-            )
+
+            print("\nAppointment Cancellation Cancelled.")
             return
 
-        appointment["status"] = "Cancelled"
+        cursor.execute("""
+            UPDATE appointments
+            SET status='Cancelled'
+            WHERE appointment_id=%s
+        """, (appointment_id,))
 
-    except ValueError as e:
-
-        print("\nError :", e)
-        logger.error(str(e))
-
-    except Exception as e:
-
-        print("\nUnexpected Error :", e)
-        logger.exception(
-            "Unexpected error while cancelling appointment."
-        )
-
-    else:
+        connection.commit()
 
         print("\nAppointment Cancelled Successfully.")
-        logger.info(
-            f"Appointment {appointment_id} cancelled successfully."
+
+        log_info(
+            f"Appointment Cancelled : {appointment_id}"
         )
-
-    finally:
-
-        print()
-
-
-# ----------------------------------------
-# Complete Appointment
-# ----------------------------------------
-
-def complete_appointment():
-
-    try:
-
-        if not appointments:
-            raise ValueError("No appointments found.")
-
-        appointment_id = input(
-            "Enter Appointment ID to Complete : "
-        ).strip()
-
-        appointment = None
-
-        for record in appointments:
-            if record["appointment_id"] == appointment_id:
-                appointment = record
-                break
-
-        if appointment is None:
-            raise ValueError("Appointment ID does not exist.")
-
-        if appointment["status"] == "Cancelled":
-            raise ValueError(
-                "Cancelled appointment cannot be completed."
-            )
-
-        if appointment["status"] == "Completed":
-            raise ValueError(
-                "Appointment is already completed."
-            )
-
-        appointment["status"] = "Completed"
 
     except ValueError as e:
 
-        print("\nError :", e)
-        logger.error(str(e))
+        print("\nValidation Error :", e)
+
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+
+        log_error(str(e))
 
     except Exception as e:
 
         print("\nUnexpected Error :", e)
-        logger.exception(
-            "Unexpected error while completing appointment."
-        )
 
-    else:
-
-        print("\nAppointment Completed Successfully.")
-        logger.info(
-            f"Appointment {appointment_id} completed successfully."
-        )
+        log_error(str(e))
 
     finally:
 
-        print()
+        cursor.close()
+
+        connection.close()
