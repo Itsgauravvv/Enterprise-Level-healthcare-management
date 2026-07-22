@@ -1,4 +1,3 @@
-
 from patient_module import (
     register_patient,
     view_all_patients,
@@ -10,61 +9,59 @@ from patient_module import (
 from doctor_module import (
     add_doctor,
     view_all_doctors,
-    search_doctor,
-    update_doctor,
-    delete_doctor
+    search_doctor
 )
 
 from appointment_module import (
     book_appointment,
     view_all_appointments,
-    search_appointment,
-    update_appointment_status,
-    cancel_appointment
+    cancel_appointment,
+    complete_appointment
 )
 
 from billing_module import (
     generate_bill,
     view_all_bills,
-    search_bill,
+    search_patient_bills,
     update_payment_status
 )
 
 from report_module import (
-    patient_report,
-    doctor_report,
-    appointment_report,
-    billing_report
+    generate_patient_reports,
+    generate_doctor_reports,
+    generate_appointment_reports,
+    generate_billing_reports
 )
 
-from database_connection import get_connection
 
+# ----------------------------------------
+# Display Reports Menu
+# ----------------------------------------
 
-
-def reports_menu():
+def display_reports():
 
     while True:
 
-        print("\n========== REPORTS ==========")
-        print("1. Patient Report")
-        print("2. Doctor Report")
-        print("3. Appointment Report")
-        print("4. Billing Report")
+        print("\n========== Healthcare Reports ==========")
+        print("1. Patient Reports")
+        print("2. Doctor Reports")
+        print("3. Appointment Reports")
+        print("4. Billing Reports")
         print("5. Back")
 
         choice = input("Enter your choice : ").strip()
 
         if choice == "1":
-            patient_report()
+            generate_patient_reports()
 
         elif choice == "2":
-            doctor_report()
+            generate_doctor_reports()
 
         elif choice == "3":
-            appointment_report()
+            generate_appointment_reports()
 
         elif choice == "4":
-            billing_report()
+            generate_billing_reports()
 
         elif choice == "5":
             break
@@ -73,56 +70,44 @@ def reports_menu():
             print("Invalid Choice.")
 
 
+# ----------------------------------------
+# Main Menu
+# ----------------------------------------
+
 def main():
-
-    connection = get_connection()
-
-    if connection is None:
-        print("\nUnable to connect to the database.")
-        print("Please check database_connection.py")
-        return
-
-    connection.close()
 
     while True:
 
         print("\n")
-        print("=" * 65)
+        print("=" * 60)
         print("        HEALTHCARE MANAGEMENT SYSTEM")
-        print("=" * 65)
+        print("=" * 60)
 
-        print("\nPATIENT MANAGEMENT")
         print("1. Register Patient")
         print("2. View All Patients")
         print("3. Search Patient")
         print("4. Update Patient")
         print("5. Delete Patient")
 
-        print("\nDOCTOR MANAGEMENT")
         print("6. Add Doctor")
         print("7. View All Doctors")
         print("8. Search Doctor")
-        print("9. Update Doctor")
-        print("10. Delete Doctor")
 
-        print("\nAPPOINTMENT MANAGEMENT")
-        print("11. Book Appointment")
-        print("12. View All Appointments")
-        print("13. Search Appointment")
-        print("14. Update Appointment Status")
-        print("15. Cancel Appointment")
+        print("9. Book Appointment")
+        print("10. View All Appointments")
+        print("11. Cancel Appointment")
+        print("12. Complete Appointment")
 
-        print("\nBILLING MANAGEMENT")
-        print("16. Generate Bill")
-        print("17. View All Bills")
-        print("18. Search Bill")
-        print("19. Update Payment Status")
+        print("13. Generate Patient Bill")
+        print("14. View All Bills")
+        print("15. Search Patient Bills")
+        print("16. Update Payment Status")
 
-        print("\nREPORTS")
-        print("20. Reports")
-        print("21. Exit")
+        print("17. Healthcare Reports")
 
-        choice = input("\nEnter Your Choice : ").strip()
+        print("18. Exit")
+
+        choice = input("\nEnter your choice : ").strip()
 
         try:
 
@@ -151,59 +136,53 @@ def main():
                 search_doctor()
 
             elif choice == "9":
-                update_doctor()
-
-            elif choice == "10":
-                delete_doctor()
-
-            elif choice == "11":
                 book_appointment()
 
-            elif choice == "12":
+            elif choice == "10":
                 view_all_appointments()
 
-            elif choice == "13":
-                search_appointment()
-
-            elif choice == "14":
-                update_appointment_status()
-
-            elif choice == "15":
+            elif choice == "11":
                 cancel_appointment()
 
-            elif choice == "16":
+            elif choice == "12":
+                complete_appointment()
+
+            elif choice == "13":
                 generate_bill()
 
-            elif choice == "17":
+            elif choice == "14":
                 view_all_bills()
 
-            elif choice == "18":
-                search_bill()
+            elif choice == "15":
+                search_patient_bills()
 
-            elif choice == "19":
+            elif choice == "16":
                 update_payment_status()
 
-            elif choice == "20":
-                reports_menu()
+            elif choice == "17":
+                display_reports()
 
-            elif choice == "21":
-                print("\nThank you for using Healthcare Management System.")
+            elif choice == "18":
+                print("\nThank You for Using Healthcare Management System")
                 break
 
             else:
-                print("\nInvalid Choice. Please try again.")
+                raise ValueError("Invalid Menu Choice.")
+
+        except ValueError as e:
+            print("\nError :", e)
 
         except KeyboardInterrupt:
-            print("\n\nProgram Interrupted by User.")
+            print("\nProgram Interrupted.")
             break
 
         except Exception as e:
             print("\nUnexpected Error :", e)
 
 
-# ---------------------------------------------------------
+# ----------------------------------------
 # Driver Code
-# ---------------------------------------------------------
+# ----------------------------------------
 
 if __name__ == "__main__":
     main()
