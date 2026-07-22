@@ -1,363 +1,541 @@
-from data_store import patients, appointments
-from validation_module import (
-    validate_patient_id,
-    validate_name,
-    validate_age,
-    validate_gender,
-    validate_contact_number,
-    validate_city,
-    validate_blood_group,
-    validate_disease
-)
-from logger_module import logger
 
 
-# ----------------------------------------
-# Display Patient Details
-# ----------------------------------------
+from database_connection import get_connection
+from logger_module import log_info, log_error
+from validation_module import *
+
+import mysql.connector
+
+
+
 
 def display_patient(patient):
-    print("-" * 50)
-    print(f"Patient ID      : {patient['patient_id']}")
-    print(f"Name            : {patient['name']}")
-    print(f"Age             : {patient['age']}")
-    print(f"Gender          : {patient['gender']}")
-    print(f"Contact Number  : {patient['contact_number']}")
-    print(f"City            : {patient['city']}")
-    print(f"Blood Group     : {patient['blood_group']}")
-    print(f"Disease         : {patient['disease']}")
-    print("-" * 50)
+
+    print("-" * 80)
+    print(f"Patient ID      : {patient[0]}")
+    print(f"Patient Name    : {patient[1]}")
+    print(f"Age             : {patient[2]}")
+    print(f"Gender          : {patient[3]}")
+    print(f"Contact Number  : {patient[4]}")
+    print(f"City            : {patient[5]}")
+    print(f"Blood Group     : {patient[6]}")
+    print(f"Disease         : {patient[7]}")
+    print("-" * 80)
 
 
-# ----------------------------------------
-# Register Patient
-# ----------------------------------------
 
 def register_patient():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase connection failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
+
+        print("\n========== Register Patient ==========")
 
         patient_id = input("Enter Patient ID : ").strip()
 
         validate_patient_id(patient_id)
 
-        for patient in patients:
-            if patient["patient_id"] == patient_id:
-                logger.warning(f"Duplicate Patient ID {patient_id}")
-                raise ValueError("Patient ID already exists.")
+        cursor.execute(
+            "SELECT patient_id FROM patients WHERE patient_id=%s",
+            (patient_id,)
+        )
 
-        name = input("Enter Patient Name : ").strip()
-        validate_name(name)
+        if cursor.fetchone():
 
-        age = input("Enter Age : ").strip()
+            print("\nPatient ID already exists.")
+            log_error(f"Duplicate Patient ID : {patient_id}")
+            return
+
+        patient_name = input("Enter Patient Name : ").strip()
+        validate_name(patient_name)
+
+        age = int(input("Enter Age : "))
         validate_age(age)
 
-        gender = input("Enter Gender (Male/Female/Other): ").strip()
+        gender = input("Enter Gender (Male/Female/Other) : ").strip()
         validate_gender(gender)
 
-        contact = input("Enter Contact Number : ").strip()
-        validate_contact_number(contact)
+        contact_number = input("Enter Contact Number : ").strip()
+        validate_contact_number(contact_number)
+
+        cursor.execute(
+            "SELECT contact_number FROM patients WHERE contact_number=%s",
+            (contact_number,)
+        )
+
+        if cursor.fetchone():
+
+            print("\nContact Number already exists.")
+            log_error(f"Duplicate Contact Number : {contact_number}")
+            return
 
         city = input("Enter City : ").strip()
         validate_city(city)
 
-        blood_group = input("Enter Blood Group : ").strip().upper()
+        blood_group = input("Enter Blood Group : ").strip()
         validate_blood_group(blood_group)
 
         disease = input("Enter Disease : ").strip()
         validate_disease(disease)
 
-        patient = {
-            "patient_id": patient_id,
-            "name": name.title(),
-            "age": int(age),
-            "gender": gender.title(),
-            "contact_number": contact,
-            "city": city.title(),
-            "blood_group": blood_group,
-            "disease": disease.title()
-        }
+        sql = """
+        INSERT INTO patients
+        (
+            patient_id,
+            patient_name,
+            age,
+            gender,
+            contact_number,
+            city,
+            blood_group,
+            disease
+        )
+        VALUES
+        (
+            %s,%s,%s,%s,%s,%s,%s,%s
+        )
+        """
 
-        patients.append(patient)
+        values = (
+            patient_id,
+            patient_name,
+            age,
+            gender,
+            contact_number,
+            city,
+            blood_group,
+            disease
+        )
+
+        cursor.execute(sql, values)
+
+        connection.commit()
+
+        print("\nPatient Registered Successfully.")
+
+        log_info(f"Patient Registered : {patient_id}")
 
     except ValueError as e:
-        print("\nError :", e)
-        logger.error(str(e))
+
+        print("\nValidation Error :", e)
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+        log_error(str(e))
 
     except Exception as e:
-        print("\nUnexpected Error :", e)
-        logger.exception("Unexpected error while registering patient.")
 
-    else:
-        print("\nPatient Registered Successfully.")
-        logger.info(f"Patient {patient_id} registered successfully.")
+        print("\nUnexpected Error :", e)
+        log_error(str(e))
 
     finally:
-        print()
+
+        cursor.close()
+        connection.close()
 
 
-# ----------------------------------------
-# View All Patients
-# ----------------------------------------
 
 def view_all_patients():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
-        if len(patients) == 0:
-            raise ValueError("No patient records found.")
+        cursor.execute("""
+            SELECT
+                patient_id,
+                patient_name,
+                age,
+                gender,
+                contact_number,
+                city,
+                blood_group,
+                disease
+            FROM patients
+            ORDER BY patient_id
+        """)
 
-        print("\n========== Patient List ==========\n")
+        patients = cursor.fetchall()
+
+        if len(patients) == 0:
+            print("\nNo Patient Records Found.")
+            return
+
+        print("\n========== ALL PATIENTS ==========\n")
 
         for patient in patients:
             display_patient(patient)
 
         print(f"\nTotal Patients : {len(patients)}")
 
-    except ValueError as e:
-        print(e)
-        logger.warning(str(e))
+        log_info("Viewed All Patients")
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+        log_error(str(e))
 
     except Exception as e:
-        print("Unexpected Error :", e)
-        logger.exception("Error while viewing patients.")
+
+        print("\nUnexpected Error :", e)
+        log_error(str(e))
 
     finally:
-        print()
-# ----------------------------------------
-# Search Patient
-# ----------------------------------------
+
+        cursor.close()
+        connection.close()
+
 
 def search_patient():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
-        if not patients:
-            raise ValueError("No patient records found.")
+        print("\n========== SEARCH PATIENT ==========")
 
-        print("\nSearch Patient By")
         print("1. Patient ID")
         print("2. Patient Name")
         print("3. Contact Number")
         print("4. City")
-        print("5. Disease")
-        print("6. Blood Group")
+        print("5. Blood Group")
+        print("6. Disease")
 
-        choice = input("Enter your choice : ").strip()
-
-        found = []
+        choice = input("\nEnter Choice : ").strip()
 
         if choice == "1":
-            key = input("Enter Patient ID : ").strip()
 
-            for patient in patients:
-                if patient["patient_id"] == key:
-                    found.append(patient)
+            patient_id = input("Enter Patient ID : ").strip()
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE patient_id=%s
+            """, (patient_id,))
 
         elif choice == "2":
-            key = input("Enter Patient Name : ").strip().lower()
 
-            for patient in patients:
-                if patient["name"].lower() == key:
-                    found.append(patient)
+            patient_name = input("Enter Patient Name : ").strip()
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE patient_name LIKE %s
+            """, ("%" + patient_name + "%",))
 
         elif choice == "3":
-            key = input("Enter Contact Number : ").strip()
 
-            for patient in patients:
-                if patient["contact_number"] == key:
-                    found.append(patient)
+            contact = input("Enter Contact Number : ").strip()
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE contact_number=%s
+            """, (contact,))
 
         elif choice == "4":
-            key = input("Enter City : ").strip().lower()
 
-            for patient in patients:
-                if patient["city"].lower() == key:
-                    found.append(patient)
+            city = input("Enter City : ").strip()
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE city LIKE %s
+            """, ("%" + city + "%",))
 
         elif choice == "5":
-            key = input("Enter Disease : ").strip().lower()
 
-            for patient in patients:
-                if patient["disease"].lower() == key:
-                    found.append(patient)
+            blood = input("Enter Blood Group : ").strip()
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE blood_group=%s
+            """, (blood,))
 
         elif choice == "6":
-            key = input("Enter Blood Group : ").strip().upper()
 
-            for patient in patients:
-                if patient["blood_group"].upper() == key:
-                    found.append(patient)
+            disease = input("Enter Disease : ").strip()
+
+            cursor.execute("""
+                SELECT *
+                FROM patients
+                WHERE disease LIKE %s
+            """, ("%" + disease + "%",))
 
         else:
-            raise ValueError("Invalid Search Option.")
 
-        if not found:
-            print("\nNo matching patient found.")
-            logger.warning("Patient search returned no records.")
-        else:
-            print(f"\n{len(found)} Record(s) Found\n")
+            print("\nInvalid Choice.")
+            return
 
-            for patient in found:
-                display_patient(patient)
+        patients = cursor.fetchall()
 
-            logger.info("Patient search completed successfully.")
+        if len(patients) == 0:
+
+            print("\nNo Matching Patient Found.")
+            return
+
+        print("\n========== SEARCH RESULT ==========\n")
+
+        for patient in patients:
+            display_patient(patient)
+
+        print(f"\nTotal Records Found : {len(patients)}")
+
+        log_info("Patient Search Performed")
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+        log_error(str(e))
 
     except Exception as e:
-        print("Error :", e)
-        logger.exception("Error while searching patient.")
+
+        print("\nUnexpected Error :", e)
+        log_error(str(e))
 
     finally:
-        print()
 
-
-# ----------------------------------------
-# Update Patient
-# ----------------------------------------
+        cursor.close()
+        connection.close()
 
 def update_patient():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
-        if not patients:
-            raise ValueError("No patient records found.")
+        print("\n========== UPDATE PATIENT ==========")
 
-        patient_id = input("Enter Patient ID to Update : ").strip()
+        patient_id = input("Enter Patient ID : ").strip()
 
-        patient = None
+        validate_patient_id(patient_id)
 
-        for record in patients:
-            if record["patient_id"] == patient_id:
-                patient = record
-                break
+        cursor.execute(
+            "SELECT * FROM patients WHERE patient_id=%s",
+            (patient_id,)
+        )
+
+        patient = cursor.fetchone()
 
         if patient is None:
-            raise ValueError("Patient ID does not exist.")
 
-        print("\nLeave a field blank to keep the old value.\n")
+            print("\nPatient Not Found.")
+            return
 
-        name = input(f"Name ({patient['name']}) : ").strip()
+        print("\nCurrent Patient Details")
+        display_patient(patient)
 
-        if name:
-            validate_name(name)
-            patient["name"] = name.title()
+        print("\nEnter New Details")
 
-        age = input(f"Age ({patient['age']}) : ").strip()
+        patient_name = input("Patient Name : ").strip()
+        validate_name(patient_name)
 
-        if age:
-            validate_age(age)
-            patient["age"] = int(age)
+        age = int(input("Age : "))
+        validate_age(age)
 
-        gender = input(f"Gender ({patient['gender']}) : ").strip()
+        gender = input("Gender (Male/Female/Other) : ").strip()
+        validate_gender(gender)
 
-        if gender:
-            validate_gender(gender)
-            patient["gender"] = gender.title()
+        contact_number = input("Contact Number : ").strip()
+        validate_contact_number(contact_number)
 
-        contact = input(
-            f"Contact Number ({patient['contact_number']}) : "
-        ).strip()
+        cursor.execute(
+            """
+            SELECT patient_id
+            FROM patients
+            WHERE contact_number=%s
+            AND patient_id<>%s
+            """,
+            (contact_number, patient_id)
+        )
 
-        if contact:
-            validate_contact_number(contact)
-            patient["contact_number"] = contact
+        if cursor.fetchone():
 
-        city = input(f"City ({patient['city']}) : ").strip()
+            print("\nContact Number already exists.")
+            return
 
-        if city:
-            validate_city(city)
-            patient["city"] = city.title()
+        city = input("City : ").strip()
+        validate_city(city)
 
-        blood = input(
-            f"Blood Group ({patient['blood_group']}) : "
-        ).strip()
+        blood_group = input("Blood Group : ").strip()
+        validate_blood_group(blood_group)
 
-        if blood:
-            validate_blood_group(blood)
-            patient["blood_group"] = blood.upper()
+        disease = input("Disease : ").strip()
+        validate_disease(disease)
 
-        disease = input(
-            f"Disease ({patient['disease']}) : "
-        ).strip()
+        sql = """
+        UPDATE patients
+        SET
+            patient_name=%s,
+            age=%s,
+            gender=%s,
+            contact_number=%s,
+            city=%s,
+            blood_group=%s,
+            disease=%s
+        WHERE patient_id=%s
+        """
 
-        if disease:
-            validate_disease(disease)
-            patient["disease"] = disease.title()
+        values = (
+            patient_name,
+            age,
+            gender,
+            contact_number,
+            city,
+            blood_group,
+            disease,
+            patient_id
+        )
+
+        cursor.execute(sql, values)
+
+        connection.commit()
+
+        print("\nPatient Updated Successfully.")
+
+        log_info(f"Patient Updated : {patient_id}")
 
     except ValueError as e:
-        print("Error :", e)
-        logger.error(str(e))
+
+        print("\nValidation Error :", e)
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+        log_error(str(e))
 
     except Exception as e:
-        print("Unexpected Error :", e)
-        logger.exception("Unexpected error while updating patient.")
 
-    else:
-        print("\nPatient Updated Successfully.")
-        logger.info(f"Patient {patient_id} updated successfully.")
+        print("\nUnexpected Error :", e)
+        log_error(str(e))
 
     finally:
-        print()
 
-# ----------------------------------------
-# Delete Patient
-# ----------------------------------------
+        cursor.close()
+        connection.close()
+
+
+
 
 def delete_patient():
 
+    connection = get_connection()
+
+    if connection is None:
+        print("\nDatabase Connection Failed.")
+        return
+
+    cursor = connection.cursor()
+
     try:
 
-        if not patients:
-            raise ValueError("No patient records found.")
+        print("\n========== DELETE PATIENT ==========")
 
-        patient_id = input("Enter Patient ID to Delete : ").strip()
+        patient_id = input("Enter Patient ID : ").strip()
 
-        patient = None
+        validate_patient_id(patient_id)
 
-        for record in patients:
-            if record["patient_id"] == patient_id:
-                patient = record
-                break
+        cursor.execute(
+            "SELECT * FROM patients WHERE patient_id=%s",
+            (patient_id,)
+        )
+
+        patient = cursor.fetchone()
 
         if patient is None:
-            raise ValueError("Patient ID does not exist.")
 
-        # Check for scheduled appointments
-        for appointment in appointments:
-            if (
-                appointment["patient_id"] == patient_id
-                and appointment["status"] == "Scheduled"
-            ):
-                raise ValueError(
-                    "Patient has a scheduled appointment. "
-                    "Deletion is not allowed."
-                )
-
-        print("\nPatient Details")
-        display_patient(patient)
-
-        confirm = input(
-            "\nAre you sure you want to delete this patient? (Y/N): "
-        ).strip().upper()
-
-        if confirm != "Y":
-            print("\nDeletion Cancelled.")
-            logger.info(f"Deletion cancelled for Patient {patient_id}")
+            print("\nPatient Not Found.")
             return
 
-        patients.remove(patient)
+        display_patient(patient)
+
+    
+
+        cursor.execute(
+            """
+            SELECT appointment_id
+            FROM appointments
+            WHERE patient_id=%s
+            AND status='Scheduled'
+            """,
+            (patient_id,)
+        )
+
+        if cursor.fetchone():
+
+            print("\nCannot Delete Patient.")
+            print("Scheduled Appointment Exists.")
+
+            log_error(
+                f"Delete Failed : Scheduled Appointment Exists ({patient_id})"
+            )
+
+            return
+
+        confirm = input("\nAre you sure? (Y/N) : ").strip().upper()
+
+        if confirm != "Y":
+
+            print("\nDeletion Cancelled.")
+            return
+
+        cursor.execute(
+            "DELETE FROM patients WHERE patient_id=%s",
+            (patient_id,)
+        )
+
+        connection.commit()
+
+        print("\nPatient Deleted Successfully.")
+
+        log_info(f"Patient Deleted : {patient_id}")
 
     except ValueError as e:
-        print("\nError :", e)
-        logger.error(str(e))
+
+        print("\nValidation Error :", e)
+        log_error(str(e))
+
+    except mysql.connector.Error as e:
+
+        print("\nDatabase Error :", e)
+        log_error(str(e))
 
     except Exception as e:
-        print("\nUnexpected Error :", e)
-        logger.exception("Unexpected error while deleting patient.")
 
-    else:
-        print("\nPatient Deleted Successfully.")
-        logger.info(f"Patient {patient_id} deleted successfully.")
+        print("\nUnexpected Error :", e)
+        log_error(str(e))
 
     finally:
-        print()
+
+        cursor.close()
+        connection.close()
+
