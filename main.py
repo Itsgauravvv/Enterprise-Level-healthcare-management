@@ -1,9 +1,3 @@
-"""
----------------------------------------------------------
-Project : Healthcare Management System
-File    : main.py
----------------------------------------------------------
-"""
 
 from patient_module import (
     register_patient,
@@ -46,9 +40,6 @@ from report_module import (
 from database_connection import get_connection
 
 
-# ---------------------------------------------------------
-# Report Menu
-# ---------------------------------------------------------
 
 def reports_menu():
 
@@ -81,10 +72,6 @@ def reports_menu():
         else:
             print("Invalid Choice.")
 
-
-# ---------------------------------------------------------
-# Main Menu
-# ---------------------------------------------------------
 
 def main():
 
@@ -133,8 +120,7 @@ def main():
 
         print("\nREPORTS")
         print("20. Reports")
-
-        print("\n21. Exit")
+        print("21. Exit")
 
         choice = input("\nEnter Your Choice : ").strip()
 
