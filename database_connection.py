@@ -12,7 +12,7 @@ def get_connection():
         connection = mysql.connector.connect(
             host="localhost",
             user="root",
-            password="prG@1980",          
+            password="",          
             database="healthcare_db"
         )
 
