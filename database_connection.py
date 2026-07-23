@@ -3,11 +3,6 @@ from mysql.connector import Error
 
 
 def get_connection():
-    """
-    Establishes a connection to the MySQL database.
-    Returns:
-        connection object if successful, otherwise None.
-    """
     try:
         connection = mysql.connector.connect(
             host="localhost",

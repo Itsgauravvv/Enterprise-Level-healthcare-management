@@ -27,16 +27,11 @@ from billing_module import (
 )
 
 from report_module import (
-    generate_patient_reports,
-    generate_doctor_reports,
-    generate_appointment_reports,
-    generate_billing_reports
+    patient_report,
+    doctor_report,
+    appointment_report,
+    billing_report
 )
-
-
-# ----------------------------------------
-# Display Reports Menu
-# ----------------------------------------
 
 def display_reports():
 
@@ -48,31 +43,19 @@ def display_reports():
         print("3. Appointment Reports")
         print("4. Billing Reports")
         print("5. Back")
-
         choice = input("Enter your choice : ").strip()
-
         if choice == "1":
-            generate_patient_reports()
-
+            patient_report()
         elif choice == "2":
-            generate_doctor_reports()
-
+            doctor_report()
         elif choice == "3":
-            generate_appointment_reports()
-
+            appointment_report()
         elif choice == "4":
-            generate_billing_reports()
-
+            billing_report()
         elif choice == "5":
             break
-
         else:
             print("Invalid Choice.")
-
-
-# ----------------------------------------
-# Main Menu
-# ----------------------------------------
 
 def main():
 
@@ -110,79 +93,53 @@ def main():
         choice = input("\nEnter your choice : ").strip()
 
         try:
-
             if choice == "1":
                 register_patient()
-
             elif choice == "2":
                 view_all_patients()
-
             elif choice == "3":
                 search_patient()
-
             elif choice == "4":
                 update_patient()
-
             elif choice == "5":
                 delete_patient()
-
             elif choice == "6":
                 add_doctor()
-
             elif choice == "7":
                 view_all_doctors()
-
             elif choice == "8":
                 search_doctor()
-
             elif choice == "9":
                 book_appointment()
-
             elif choice == "10":
                 view_all_appointments()
-
             elif choice == "11":
                 cancel_appointment()
-
             elif choice == "12":
                 complete_appointment()
-
             elif choice == "13":
                 generate_bill()
-
             elif choice == "14":
                 view_all_bills()
-
             elif choice == "15":
                 search_patient_bills()
-
             elif choice == "16":
                 update_payment_status()
-
             elif choice == "17":
                 display_reports()
-
             elif choice == "18":
                 print("\nThank You for Using Healthcare Management System")
                 break
 
             else:
                 raise ValueError("Invalid Menu Choice.")
-
         except ValueError as e:
             print("\nError :", e)
-
         except KeyboardInterrupt:
             print("\nProgram Interrupted.")
             break
-
         except Exception as e:
             print("\nUnexpected Error :", e)
-
-
-# ----------------------------------------
-# Driver Code
-# ----------------------------------------
 
 if __name__ == "__main__":
     main()

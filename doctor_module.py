@@ -1,6 +1,9 @@
 
 from database_connection import get_connection
-from logger_module import log_info, log_error
+from logger_module import (
+    application_logger,
+    exception_logger
+)
 from validation_module import *
 
 import mysql.connector

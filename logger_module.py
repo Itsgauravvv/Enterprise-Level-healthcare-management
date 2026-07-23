@@ -1,5 +1,6 @@
 import logging
 import os
+logger = logging.getLogger(__name__)
 
 if not os.path.exists("logs"):
     os.makedirs("logs")
