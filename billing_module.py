@@ -218,11 +218,6 @@ def display_bill(bill):
     print(f"Payment Status       : {bill[11]}")
     print("-" * 80)
 
-
-# ----------------------------------------
-# View All Bills
-# ----------------------------------------
-
 def view_all_bills():
 
     connection = get_connection()
